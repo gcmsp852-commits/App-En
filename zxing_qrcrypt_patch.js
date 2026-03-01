@@ -115,18 +115,19 @@ window.QRCRYPT = (() => {
     return out;
   }
 
-// 管理部16bitからアプリ暗号化フラグを判定する
+// 管理部16bitからアプリ暗号化フラグを正確に判定する
   function isAppEncryptionOnFromFirstQR(firstText){
     if (!firstText || firstText.length < 2) return false;
 
-    // パターンA: 管理部が "0" と "1" の16文字の文字列として付与されている場合
-    // 構成: [QR番号(0)][0][0][0][0][同一データ(5)][システム暗号(6)][アプリ暗号(7)]
+    // パターンA: 16文字の "0" / "1" 文字列として付与されている場合
     if (/^[01]{16}/.test(firstText)) {
-      // 8文字目（インデックス7）がアプリ暗号化ONのフラグ
       return firstText.charAt(7) === '1';
     }
 
-    // パターンB（フォールバック）: 万が一バイナリの2バイトで処理されていた場合
+    // パターンB: 2バイトのバイナリ制御文字として付与されている場合
+    // ツイン.html の仕様上、1バイト目の構成は以下の8bitとなる。
+    // [QR番号(1bit)][0][0][0][0][同一(1bit)][sys(1bit)][app(1bit)]
+    // したがって、1バイト目(charCodeAt(0))の最下位ビット(LSB)が「1」であればアプリ暗号化ON。
     const byte0 = firstText.charCodeAt(0);
     return (byte0 & 0x01) !== 0;
   }
@@ -321,4 +322,5 @@ window.QRCRYPT = (() => {
   return { deriveMask, isAppEncryptionOnFromFirstQR, decryptSecondFromFrame };
 
 })();
+
 
