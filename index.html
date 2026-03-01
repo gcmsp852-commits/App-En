@@ -328,11 +328,12 @@
             isProcessing = false;
         }
 
-        // ▼▼▼ 第1QRの生データから直接アプリ暗号化フラグ(最下位ビット)を検知する安全装置 ▼▼▼
+// ▼▼▼ 第1QRの生データから直接アプリ暗号化フラグ(8ビット目)を検知する安全装置 ▼▼▼
         let appEncOn = false;
         if (firstQR) {
             if (firstQR.rawBytes && firstQR.rawBytes.length >= 2) {
-                // 生データが存在する場合、1バイト目の最下位ビットを判定
+                // 生データが存在する場合、1バイト目の最下位ビット（8ビット目）を判定
+                // 0x01 (2進数:00000001) とのAND演算で 1 なら true
                 appEncOn = ((firstQR.rawBytes[0] & 0x01) !== 0);
             } else if (QRCRYPT && typeof QRCRYPT.isAppEncryptionOnFromFirstQR === 'function') {
                 // 念のためのフォールバック
@@ -476,3 +477,4 @@
 </script>
 </body>
 </html>
+
