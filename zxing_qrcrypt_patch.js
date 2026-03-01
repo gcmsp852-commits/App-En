@@ -115,20 +115,44 @@ window.QRCRYPT = (() => {
     return out;
   }
 
-// 管理部16bitからアプリ暗号化フラグ（8ビット目）を正確に判定する
-  function isAppEncryptionOnFromFirstQR(firstText){
-    if (!firstText || firstText.length < 2) return false;
+// 管理部16bitからアプリ暗号化フラグを正確に判定する
+  function isAppEncryptionOnFromFirstQR(firstItem){
+    if (!firstItem) return false;
 
-    // パターンA: 16文字の "0" / "1" 文字列として付与されている場合
-    if (/^[01]{16}/.test(firstText)) {
-      // 8文字目（インデックス7）が '1' ならアプリ暗号化ON
-      return firstText.charAt(7) === '1';
+    // パターンA: ZXingが抽出した生データ(rawBytes)がある場合（最も確実）
+    if (firstItem.rawBytes && firstItem.rawBytes.length > 0) {
+      const bytes = firstItem.rawBytes;
+      let end = bytes.length - 1;
+      
+      // 1. qrの仕様による末尾のバイトパディング (0xEC, 0x11) をスキップ
+      while (end >= 0 && (bytes[end] === 0xEC || bytes[end] === 0x11)) {
+        end--;
+      }
+      
+      // 2. 残りの有効なデータバイトをすべて 01 の2進数文字列に変換
+      let bitString = "";
+      for (let i = 0; i <= end; i++) {
+        bitString += bytes[i].toString(2).padStart(8, '0');
+      }
+      
+      // 3. 生成仕様による Management 16bit の位置特定と判定
+      // 構成: [データ] + 0000(Term1) + 000000sa(Mgmt上位) + 00000000(Mgmt下位) + 0000(Term2) + 0~7個の0(BitPad)
+      // アプリ暗号化(a)が 1 の場合、上位バイト(sa) は "00000001" または "00000011"。
+      // その直後に、Mgmt下位(8) + Term2(4) + BitPad(0~7) = 12〜19個の '0' が続いて終わる。
+      // この正規表現にマッチすれば、確実にアプリ暗号化ONであると判定できる。
+      if (/(?:00000001|00000011)0{12,19}$/.test(bitString)) {
+        return true;
+      }
+      return false; // マッチしなければ暗号化なし
     }
 
-    // パターンB: 2バイトのバイナリ制御文字として付与されている場合
-    // 0x01 (2進数:00000001) とAND演算して、8ビット目が 1 かどうかを判定
-    const byte0 = firstText.charCodeAt(0);
-    return (byte0 & 0x01) !== 0;
+    // パターンB（フォールバック）: テキストの先頭に "0/1" の文字列が付与されていた場合
+    const firstText = typeof firstItem === 'string' ? firstItem : (firstItem.text || "");
+    if (/^[01]{16}/.test(firstText)) {
+      return firstText.charAt(7) === '1'; // 8文字目が1ならON
+    }
+
+    return false;
   }
 
   // =========================
@@ -321,6 +345,7 @@ window.QRCRYPT = (() => {
   return { deriveMask, isAppEncryptionOnFromFirstQR, decryptSecondFromFrame };
 
 })();
+
 
 
 
