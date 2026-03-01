@@ -119,32 +119,29 @@ window.QRCRYPT = (() => {
   function isAppEncryptionOnFromFirstQR(firstItem){
     if (!firstItem) return false;
 
-    // パターンA: ZXingが抽出した生データ(rawBytes)がある場合（最も確実）
+    // ZXingが抽出した生データ(rawBytes)がある場合（最も確実）
     if (firstItem.rawBytes && firstItem.rawBytes.length > 0) {
-      const bytes = firstItem.rawBytes;
-      let end = bytes.length - 1;
-      
-      // 1. qrの仕様による末尾のバイトパディング (0xEC, 0x11) をスキップ
-      while (end >= 0 && (bytes[end] === 0xEC || bytes[end] === 0x11)) {
-        end--;
-      }
-      
-      // 2. 残りの有効なデータバイトをすべて 01 の2進数文字列に変換
+      // 全データを「0と1の文字列」に変換する
       let bitString = "";
-      for (let i = 0; i <= end; i++) {
-        bitString += bytes[i].toString(2).padStart(8, '0');
+      for (let i = 0; i < firstItem.rawBytes.length; i++) {
+        bitString += firstItem.rawBytes[i].toString(2).padStart(8, '0');
       }
       
-      // 3. 生成仕様による Management 16bit の位置特定と判定
-      // 構成: [データ] + 0000(Term1) + 000000sa(Mgmt上位) + 00000000(Mgmt下位) + 0000(Term2) + 0~7個の0(BitPad)
-      // アプリ暗号化(a)が 1 の場合、上位バイト(sa) は "00000001" または "00000011"。
-      // その直後に、Mgmt下位(8) + Term2(4) + BitPad(0~7) = 12〜19個の '0' が続いて終わる。
-      // この正規表現にマッチすれば、確実にアプリ暗号化ONであると判定できる。
-      if (/(?:00000001|00000011)0{12,19}$/.test(bitString)) {
-        return true;
-      }
-      return false; // マッチしなければ暗号化なし
+      // 【判定ロジック】
+      // 管理部16bitの構成: 000000[same][sys] [app]0000000
+      // app=1 の場合: 000000[0または1を2つ] 10000000
+      // その直後にターミネーター(0000)、ビットパディング(0~7個の0)、
+      // バイトパディング(11101100 または 00010001)が続いて終わる。
+      // 
+      // 正規表現を使って、この「アプリ暗号化ONの特有パターン」が
+      // データの末尾部分に存在しているかを一発で検知します。
+      const regex = /000000[01]{2}10{11,18}(?:11101100|00010001)*$/;
+      
+      return regex.test(bitString);
     }
+
+    return false;
+  }
 
     // パターンB（フォールバック）: テキストの先頭に "0/1" の文字列が付与されていた場合
     const firstText = typeof firstItem === 'string' ? firstItem : (firstItem.text || "");
@@ -345,6 +342,7 @@ window.QRCRYPT = (() => {
   return { deriveMask, isAppEncryptionOnFromFirstQR, decryptSecondFromFrame };
 
 })();
+
 
 
 
