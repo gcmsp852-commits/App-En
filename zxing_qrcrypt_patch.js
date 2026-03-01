@@ -115,10 +115,15 @@ window.QRCRYPT = (() => {
     return out;
   }
 
-  // ※ここはあなたの「管理部16bitのどこに暗号化フラグが入るか」に依存します。
+// 管理部16bitの先頭バイトからアプリ暗号化フラグを判定する
   function isAppEncryptionOnFromFirstQR(firstText){
-    // 例：先頭に "MGMT:xxxx" などがある場合に判定する、など。
-    return false;
+    if (!firstText || firstText.length === 0) return false;
+    
+    // 生成仕様より、データ先頭の1バイト目に管理部の前半8ビットが格納される。
+    // 構成: [QR番号(0)][0][0][0][0][同一データ][システム暗号][アプリ暗号]
+    // したがって、1バイト目の最下位ビットが 1 ならアプリ暗号化ONとなる。
+    const firstByte = firstText.charCodeAt(0);
+    return (firstByte & 0x01) !== 0;
   }
 
   // =========================
@@ -309,4 +314,5 @@ window.QRCRYPT = (() => {
   }
 
   return { deriveMask, isAppEncryptionOnFromFirstQR, decryptSecondFromFrame };
+
 })();
