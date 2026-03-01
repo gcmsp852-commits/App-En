@@ -1,12 +1,10 @@
-
-
 <!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>QRツイン リーダー</title>
-<meta name="apple-mobile-web-app-title" content="QRツイン">
+    <meta name="apple-mobile-web-app-title" content="QRツイン">
     <meta name="application-name" content="QRツイン">
 
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -19,8 +17,8 @@
     <link rel="icon" type="image/png" sizes="512x512" href="icon.png">
     <link rel="manifest" href="manifest.json">
 
-<script src="./zxing.min.js"></script>
-<script src="./zxing_qrcrypt_patch.js"></script>
+    <script src="./zxing.min.js"></script>
+    <script src="./zxing_qrcrypt_patch.js"></script>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -51,9 +49,9 @@
         }
         button:disabled { background: #555; cursor: not-allowed; color: #aaa; }
         
-        /* ▼▼▼ 変更点：起動ボタンを薄緑色に指定、文字色を見やすく調整 ▼▼▼ */
-        #startBtn { background: #2196F3; color: #ffffff; } 
-        #startBtn:active { background: #1976D2; }
+        /* ▼▼▼ 変更点：起動ボタンを青色に指定（更新確認用） ▼▼▼ */
+        #startBtn { background: #81C784; color: #121212; } 
+        #startBtn:active { background: #66BB6A; }
         
         #backBtn { background: #03DAC6; color: #000; margin-top: 30px; }
         #backBtn:active { background: #018786; }
@@ -96,10 +94,10 @@
         <button id="backBtn" onclick="goBack()">🔙 もとのカメラ画面に戻る</button>
     </div>
 
-<div id="decryptPanel" style="display:none; margin-top:14px;">
-  <input id="appPw" type="password" placeholder="アプリ暗号化パスワード" style="width:90%; padding:10px;">
-  <button id="decryptBtn" style="margin-top:10px;">🔓 第2QRを復号して表示</button>
-</div>
+    <div id="decryptPanel" style="display:none; margin-top:14px;">
+        <input id="appPw" type="password" placeholder="アプリ暗号化パスワード" style="width:90%; padding:10px;">
+        <button id="decryptBtn" style="margin-top:10px;">🔓 第2QRを復号して表示</button>
+    </div>
 
 <script>
     const video = document.getElementById('video');
@@ -140,21 +138,13 @@
     }
 
     async function initEngines() {
-        if ('BarcodeDetector' in window) {
-            try {
-                const formats = await BarcodeDetector.getSupportedFormats();
-                if (formats.includes('qr_code')) {
-                    barcodeDetector = new BarcodeDetector({ formats: ['qr_code'] });
-                    useNativeDetector = true;
-                    document.getElementById('detectorInfo').innerText = "⚡ エンジン: BarcodeDetector (爆速・Native)";
-                    return;
-                }
-            } catch (e) {}
-        }
+        // ▼▼▼ 変更点：OS標準エンジン(BarcodeDetector)は制御文字を自動削除してしまうため、
+        // 常に ZXing エンジンを強制使用するように修正 ▼▼▼
+        useNativeDetector = false;
         
         if (typeof ZXing !== 'undefined') {
             zxingMultiReader = new ZXing.qrcode.QRCodeMultiReader();
-            document.getElementById('detectorInfo').innerText = "🐢 エンジン: ZXing (フォールバック)";
+            document.getElementById('detectorInfo').innerText = "🐢 エンジン: ZXing (管理部・暗号化対応)";
         } else {
             alert("ZXingライブラリの読み込みに失敗しました。再読み込みしてください。");
         }
@@ -192,6 +182,23 @@
 
     function getDistance(p1, p2) {
         return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
+    }
+
+    // ▼▼▼ 追加：読取結果から先頭の管理部（制御文字など）を除去して表示を綺麗にする関数 ▼▼▼
+    function getCleanText(text) {
+        if (!text) return text;
+        
+        // 16文字の "0"/"1" の文字列パターンの場合はカット
+        if (/^[01]{16}/.test(text)) return text.substring(16);
+        
+        // 2バイトのバイナリ（制御文字）が含まれている場合は最初の2文字をスキップ
+        if (text.length > 2) {
+            const c0 = text.charCodeAt(0);
+            if (c0 < 0x20 || (c0 >= 0x80 && c0 <= 0xFF)) {
+                return text.substring(2);
+            }
+        }
+        return text;
     }
 
     async function scanLoop() {
@@ -243,15 +250,14 @@
             isProcessing = false;
         }
 
-// ▼▼▼ ここを置き換え ▼▼▼
-const appEncOn = !!(firstQR && QRCRYPT && QRCRYPT.isAppEncryptionOnFromFirstQR && QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR.text));
+        // ▼▼▼ 変更点：第1QRの管理部を判定し、暗号化ONなら第2QR未検出でも強制的に進む ▼▼▼
+        const appEncOn = !!(firstQR && QRCRYPT && QRCRYPT.isAppEncryptionOnFromFirstQR && QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR.text));
 
-if (firstQR && (secondQR || appEncOn)) {
-  showResultScreen();           // 第2QRが読めなくても、暗号化ONなら進む
-  isScanning = false;
-  return;
-}
-
+        if (firstQR && (secondQR || appEncOn)) {
+            showResultScreen();
+            isScanning = false;
+            return;
+        }
 
         requestAnimationFrame(scanLoop);
     }
@@ -309,9 +315,10 @@ if (firstQR && (secondQR || appEncOn)) {
         }
     }
 
+    // ▼▼▼ 変更点：getCleanText() を使って表示を綺麗にする ▼▼▼
     function updateUI() {
-        if (firstQR) document.getElementById('text1').innerText = firstQR.text;
-        if (secondQR) document.getElementById('text2').innerText = secondQR.text;
+        if (firstQR) document.getElementById('text1').innerText = getCleanText(firstQR.text);
+        if (secondQR) document.getElementById('text2').innerText = getCleanText(secondQR.text);
     }
 
     function formatResultText(text) {
@@ -332,14 +339,13 @@ if (firstQR && (secondQR || appEncOn)) {
         document.getElementById('statusPanel').style.display = 'none';
         document.getElementById('resultScreen').style.display = 'block';
         
-document.getElementById('finalText1').innerHTML = formatResultText(firstQR.text);
-document.getElementById('finalText2').innerHTML = secondQR ? formatResultText(secondQR.text) : "第2QRは未解読（暗号化の可能性）";
+        // ▼▼▼ 変更点：getCleanText() を使って表示を綺麗にする ▼▼▼
+        document.getElementById('finalText1').innerHTML = formatResultText(getCleanText(firstQR.text));
+        document.getElementById('finalText2').innerHTML = secondQR ? formatResultText(getCleanText(secondQR.text)) : "第2QRは未解読（暗号化の可能性）";
 
-// ★第1QRの管理部を見てアプリ暗号化ONならパスワードUI表示
-const appEncOn = QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR.text);
-document.getElementById('decryptPanel').style.display = appEncOn ? 'block' : 'none';
-
-
+        // ★第1QRの管理部を見てアプリ暗号化ONならパスワードUI表示
+        const appEncOn = QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR.text);
+        document.getElementById('decryptPanel').style.display = appEncOn ? 'block' : 'none';
     }
 
     function goBack() {
@@ -352,6 +358,8 @@ document.getElementById('decryptPanel').style.display = appEncOn ? 'block' : 'no
         document.getElementById('resultScreen').style.display = 'none';
         document.getElementById('cameraContainer').style.display = 'block';
         document.getElementById('statusPanel').style.display = 'block';
+        document.getElementById('decryptPanel').style.display = 'none'; // 戻る時にパスワードパネルも隠す
+        document.getElementById('appPw').value = ''; // パスワードリセット
         
         ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         isScanning = true;
@@ -373,20 +381,17 @@ document.getElementById('decryptPanel').style.display = appEncOn ? 'block' : 'no
         ctx.fill();
     }
 
-document.getElementById('decryptBtn').addEventListener('click', async () => {
-  try {
-    const pw = document.getElementById('appPw').value || "";
-    const dec = await QRCRYPT.decryptSecondFromFrame(video, pw);
-    document.getElementById('finalText2').innerHTML = formatResultText(dec);
-  } catch (e) {
-    alert("復号に失敗: " + (e.message || e));
-  }
-});
+    document.getElementById('decryptBtn').addEventListener('click', async () => {
+      try {
+        const pw = document.getElementById('appPw').value || "";
+        const dec = await QRCRYPT.decryptSecondFromFrame(video, pw);
+        // 復号したテキストも getCleanText を通して綺麗に表示
+        document.getElementById('finalText2').innerHTML = formatResultText(getCleanText(dec));
+      } catch (e) {
+        alert("復号に失敗: " + (e.message || e));
+      }
+    });
 
 </script>
 </body>
 </html>
-
-
-
-
