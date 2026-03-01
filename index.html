@@ -49,9 +49,9 @@
         }
         button:disabled { background: #555; cursor: not-allowed; color: #aaa; }
         
-        /* ▼▼▼ 変更点：起動ボタンを青色に指定（更新確認用） ▼▼▼ */
-        #startBtn { background: #81C784; color: #121212; } 
-        #startBtn:active { background: #66BB6A; }
+        /* ▼▼▼ 変更点：更新が確実に分かるよう起動ボタンをオレンジ色に指定 ▼▼▼ */
+        #startBtn { background: #FF9800; color: #ffffff; } 
+        #startBtn:active { background: #F57C00; }
         
         #backBtn { background: #03DAC6; color: #000; margin-top: 30px; }
         #backBtn:active { background: #018786; }
@@ -124,30 +124,53 @@
         startBtn.disabled = true;
         startBtn.innerText = "準備中...";
 
-        await initEngines();
-        const success = await startCamera();
-        
-        if (success) {
-            document.getElementById('startScreen').style.display = 'none';
-            document.getElementById('cameraContainer').style.display = 'block';
-            document.getElementById('statusPanel').style.display = 'block';
-        } else {
+        try {
+            await initEngines();
+        } catch (e) {
+            alert("エンジン初期化エラー: " + e.message);
+            startBtn.disabled = false;
+            startBtn.innerText = "📷 カメラを起動する";
+            return;
+        }
+
+        try {
+            const success = await startCamera();
+            if (success) {
+                document.getElementById('startScreen').style.display = 'none';
+                document.getElementById('cameraContainer').style.display = 'block';
+                document.getElementById('statusPanel').style.display = 'block';
+            } else {
+                startBtn.disabled = false;
+                startBtn.innerText = "📷 カメラを起動する";
+            }
+        } catch (e) {
+            alert("カメラ起動エラー: " + e.message);
             startBtn.disabled = false;
             startBtn.innerText = "📷 カメラを起動する";
         }
     }
 
     async function initEngines() {
-        // ▼▼▼ 変更点：OS標準エンジン(BarcodeDetector)は制御文字を自動削除してしまうため、
-        // 常に ZXing エンジンを強制使用するように修正 ▼▼▼
+        // OS標準エンジン(BarcodeDetector)は制御文字を自動削除してしまうため、強制的に無効化
         useNativeDetector = false;
         
-        if (typeof ZXing !== 'undefined') {
-            zxingMultiReader = new ZXing.qrcode.QRCodeMultiReader();
-            document.getElementById('detectorInfo').innerText = "🐢 エンジン: ZXing (管理部・暗号化対応)";
-        } else {
-            alert("ZXingライブラリの読み込みに失敗しました。再読み込みしてください。");
+        if (typeof ZXing === 'undefined') {
+            throw new Error("ZXingライブラリが読み込まれていません。");
         }
+        
+        // ユーザーの zxing.min.js の種類に合わせて安全にインスタンスを作成する（エラー防止）
+        if (ZXing.qrcode && ZXing.qrcode.QRCodeMultiReader) {
+            zxingMultiReader = new ZXing.qrcode.QRCodeMultiReader();
+        } else if (ZXing.BrowserMultiFormatReader) {
+            zxingMultiReader = new ZXing.BrowserMultiFormatReader();
+        } else if (ZXing.BrowserQRCodeReader) {
+            zxingMultiReader = new ZXing.BrowserQRCodeReader();
+        } else {
+            // 万が一どれもない場合の最終フォールバック
+            zxingMultiReader = new ZXing.MultiFormatReader();
+        }
+        
+        document.getElementById('detectorInfo').innerText = "🐢 エンジン: ZXing (管理部・暗号化対応)";
     }
 
     async function startCamera() {
@@ -168,8 +191,7 @@
             requestAnimationFrame(scanLoop);
             return true;
         } catch (err) {
-            alert("カメラを起動できませんでした。\n権限を確認してください。\nエラー: " + err.message);
-            return false;
+            throw new Error(err.message);
         }
     }
 
@@ -184,14 +206,10 @@
         return Math.sqrt(Math.pow(p1.x - p2.x, 2) + Math.pow(p1.y - p2.y, 2));
     }
 
-    // ▼▼▼ 追加：読取結果から先頭の管理部（制御文字など）を除去して表示を綺麗にする関数 ▼▼▼
+    // 読取結果から先頭の管理部（制御文字など）を除去して表示を綺麗にする関数
     function getCleanText(text) {
         if (!text) return text;
-        
-        // 16文字の "0"/"1" の文字列パターンの場合はカット
         if (/^[01]{16}/.test(text)) return text.substring(16);
-        
-        // 2バイトのバイナリ（制御文字）が含まれている場合は最初の2文字をスキップ
         if (text.length > 2) {
             const c0 = text.charCodeAt(0);
             if (c0 < 0x20 || (c0 >= 0x80 && c0 <= 0xFF)) {
@@ -221,24 +239,27 @@
             let detectedItems = [];
 
             try {
-                if (useNativeDetector) {
-                    const barcodes = await barcodeDetector.detect(video);
-                    detectedItems = barcodes.map(b => ({
-                        text: b.rawValue,
-                        points: b.cornerPoints,
-                        center: getCenter(b.cornerPoints)
-                    }));
-                } else if (zxingMultiReader) {
+                if (zxingMultiReader) {
                     zxingCanvas.width = overlayCanvas.width;
                     zxingCanvas.height = overlayCanvas.height;
                     zxingCtx.drawImage(video, 0, 0, zxingCanvas.width, zxingCanvas.height);
                     
                     const luminanceSource = new ZXing.HTMLCanvasElementLuminanceSource(zxingCanvas);
                     const binaryBitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(luminanceSource));
-                    const hints = new Map();
-                    hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
                     
-                    const results = zxingMultiReader.decodeMultiple(binaryBitmap, hints);
+                    // エンジンの種類に合わせてメソッドを安全に呼び出す
+                    let results = [];
+                    if (typeof zxingMultiReader.decodeMultiple === 'function') {
+                        try {
+                            results = zxingMultiReader.decodeMultiple(binaryBitmap);
+                        } catch(e) {}
+                    } else if (typeof zxingMultiReader.decode === 'function') {
+                        try {
+                            const res = zxingMultiReader.decode(binaryBitmap);
+                            if (res) results.push(res);
+                        } catch(e) {}
+                    }
+                    
                     detectedItems = results.map(r => {
                         const pts = r.getResultPoints().map(p => ({ x: p.getX(), y: p.getY() }));
                         return { text: r.getText(), points: pts, center: getCenter(pts) };
@@ -250,7 +271,7 @@
             isProcessing = false;
         }
 
-        // ▼▼▼ 変更点：第1QRの管理部を判定し、暗号化ONなら第2QR未検出でも強制的に進む ▼▼▼
+        // ▼ 第1QRの管理部を判定し、暗号化ONなら第2QR未検出でも強制的に進む ▼
         const appEncOn = !!(firstQR && QRCRYPT && QRCRYPT.isAppEncryptionOnFromFirstQR && QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR.text));
 
         if (firstQR && (secondQR || appEncOn)) {
@@ -315,7 +336,6 @@
         }
     }
 
-    // ▼▼▼ 変更点：getCleanText() を使って表示を綺麗にする ▼▼▼
     function updateUI() {
         if (firstQR) document.getElementById('text1').innerText = getCleanText(firstQR.text);
         if (secondQR) document.getElementById('text2').innerText = getCleanText(secondQR.text);
@@ -339,11 +359,10 @@
         document.getElementById('statusPanel').style.display = 'none';
         document.getElementById('resultScreen').style.display = 'block';
         
-        // ▼▼▼ 変更点：getCleanText() を使って表示を綺麗にする ▼▼▼
         document.getElementById('finalText1').innerHTML = formatResultText(getCleanText(firstQR.text));
         document.getElementById('finalText2').innerHTML = secondQR ? formatResultText(getCleanText(secondQR.text)) : "第2QRは未解読（暗号化の可能性）";
 
-        // ★第1QRの管理部を見てアプリ暗号化ONならパスワードUI表示
+        // 第1QRの管理部を見てアプリ暗号化ONならパスワードUI表示
         const appEncOn = QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR.text);
         document.getElementById('decryptPanel').style.display = appEncOn ? 'block' : 'none';
     }
@@ -358,8 +377,8 @@
         document.getElementById('resultScreen').style.display = 'none';
         document.getElementById('cameraContainer').style.display = 'block';
         document.getElementById('statusPanel').style.display = 'block';
-        document.getElementById('decryptPanel').style.display = 'none'; // 戻る時にパスワードパネルも隠す
-        document.getElementById('appPw').value = ''; // パスワードリセット
+        document.getElementById('decryptPanel').style.display = 'none';
+        document.getElementById('appPw').value = ''; 
         
         ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         isScanning = true;
@@ -385,7 +404,6 @@
       try {
         const pw = document.getElementById('appPw').value || "";
         const dec = await QRCRYPT.decryptSecondFromFrame(video, pw);
-        // 復号したテキストも getCleanText を通して綺麗に表示
         document.getElementById('finalText2').innerHTML = formatResultText(getCleanText(dec));
       } catch (e) {
         alert("復号に失敗: " + (e.message || e));
