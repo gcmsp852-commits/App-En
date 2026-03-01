@@ -50,8 +50,8 @@
         button:disabled { background: #555; cursor: not-allowed; color: #aaa; }
         
         /* ▼▼▼ 変更点：更新が確実に分かるよう起動ボタンを赤色に指定 ▼▼▼ */
-        #startBtn { background: #81C784; color: #121212; } 
-        #startBtn:active { background: #66BB6A; }
+        #startBtn { background: #2196F3; color: #ffffff; } 
+        #startBtn:active { background: #1976D2; }
         
         #backBtn { background: #03DAC6; color: #000; margin-top: 30px; }
         #backBtn:active { background: #018786; }
@@ -328,17 +328,11 @@
             isProcessing = false;
         }
 
-// ▼▼▼ 第1QRの生データから直接アプリ暗号化フラグ(8ビット目)を検知する安全装置 ▼▼▼
+// ▼▼▼ 第1QRの生データ（末尾）からアプリ暗号化フラグを検知する ▼▼▼
         let appEncOn = false;
-        if (firstQR) {
-            if (firstQR.rawBytes && firstQR.rawBytes.length >= 2) {
-                // 生データが存在する場合、1バイト目の最下位ビット（8ビット目）を判定
-                // 0x01 (2進数:00000001) とのAND演算で 1 なら true
-                appEncOn = ((firstQR.rawBytes[0] & 0x01) !== 0);
-            } else if (QRCRYPT && typeof QRCRYPT.isAppEncryptionOnFromFirstQR === 'function') {
-                // 念のためのフォールバック
-                appEncOn = QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR.text);
-            }
+        if (firstQR && QRCRYPT && typeof QRCRYPT.isAppEncryptionOnFromFirstQR === 'function') {
+            // パッチ側の関数に firstQR オブジェクト全体（rawBytes含む）を渡して判定させる
+            appEncOn = QRCRYPT.isAppEncryptionOnFromFirstQR(firstQR);
         }
 
         // 暗号化がONであれば、第2QRが読めなくても強制的にパスワード画面へ進む
@@ -477,5 +471,6 @@
 </script>
 </body>
 </html>
+
 
 
